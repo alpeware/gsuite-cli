@@ -1,0 +1,38 @@
+# Python byte code and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Build and distribution
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Secrets and OAuth credentials (CRITICAL: never commit credentials)
+client_secret*.json
+*.pem
+*.key
+*.p12
+tokens/
+*.token.json
+credentials*.json
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
