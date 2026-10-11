@@ -20,12 +20,20 @@ SCOPE_DRIVE_FULL = "https://www.googleapis.com/auth/drive"
 SCOPE_DOCUMENTS = "https://www.googleapis.com/auth/documents"
 SCOPE_SPREADSHEETS = "https://www.googleapis.com/auth/spreadsheets"
 
+# Tasks & Slides API scopes
+SCOPE_TASKS_READONLY = "https://www.googleapis.com/auth/tasks.readonly"
+SCOPE_TASKS = "https://www.googleapis.com/auth/tasks"
+SCOPE_PRESENTATIONS_READONLY = "https://www.googleapis.com/auth/presentations.readonly"
+SCOPE_PRESENTATIONS = "https://www.googleapis.com/auth/presentations"
+
 # Pre-defined scope profiles
 SCOPE_PROFILES: dict[str, list[str]] = {
     "read-only": [
         SCOPE_GMAIL_READONLY,
         SCOPE_CALENDAR_READONLY,
         SCOPE_DRIVE_READONLY,
+        SCOPE_TASKS_READONLY,
+        SCOPE_PRESENTATIONS_READONLY,
     ],
     "standard": [
         SCOPE_GMAIL_MODIFY,
@@ -33,6 +41,8 @@ SCOPE_PROFILES: dict[str, list[str]] = {
         SCOPE_DRIVE_FILE,
         SCOPE_DOCUMENTS,
         SCOPE_SPREADSHEETS,
+        SCOPE_TASKS,
+        SCOPE_PRESENTATIONS,
     ],
     "full": [
         SCOPE_GMAIL_SEND,
@@ -41,6 +51,8 @@ SCOPE_PROFILES: dict[str, list[str]] = {
         SCOPE_DRIVE_FULL,
         SCOPE_DOCUMENTS,
         SCOPE_SPREADSHEETS,
+        SCOPE_TASKS,
+        SCOPE_PRESENTATIONS,
     ],
 }
 

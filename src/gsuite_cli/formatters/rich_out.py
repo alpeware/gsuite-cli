@@ -208,3 +208,79 @@ def render_error(message: str, details: dict[str, Any] | None = None) -> None:
     if details:
         for k, v in details.items():
             err_console.print(f"  [dim]{k}:[/dim] {v}")
+
+
+def render_tasklists(tasklists: list[dict[str, Any]], account: str | None = None) -> None:
+    """Render a table of Google Task lists."""
+    title = f"Task Lists ({len(tasklists)})"
+    if account:
+        title += f" - [cyan]{account}[/cyan]"
+
+    table = Table(title=title, show_lines=False)
+    table.add_column("List ID", style="dim")
+    table.add_column("Title", style="bold white")
+    table.add_column("Updated", style="blue")
+
+    for tl in tasklists:
+        table.add_row(tl.get("id", ""), tl.get("title", "Untitled"), tl.get("updated", "")[:19])
+
+    console.print(table)
+
+
+def render_tasks_list(tasks: list[dict[str, Any]], title: str = "Tasks") -> None:
+    """Render a list of tasks with completion status, due date, and notes."""
+    if not tasks:
+        console.print("[dim]No tasks found.[/dim]")
+        return
+
+    table = Table(title=title, show_lines=False)
+    table.add_column("Status", justify="center", no_wrap=True)
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Title", style="bold white")
+    table.add_column("Due Date", style="yellow")
+    table.add_column("Notes", style="dim")
+
+    for t in tasks:
+        is_completed = t.get("status") == "completed"
+        status_icon = "[green]✔ Done[/green]" if is_completed else "[yellow]○ Pending[/yellow]"
+        task_id = t.get("id", "")[:16]
+        task_title = t.get("title", "(No title)")
+        due = t.get("due", "")[:10] if t.get("due") else "-"
+        notes = (t.get("notes", "") or "").replace("\n", " ")[:40]
+        table.add_row(status_icon, task_id, task_title, due, notes)
+
+    console.print(table)
+
+
+def render_presentation_info(info: dict[str, Any]) -> None:
+    """Render summary and slide listing for a Google Slides presentation."""
+    title = info.get("title", "Untitled Presentation")
+    slide_count = info.get("slide_count", 0)
+    pres_id = info.get("presentation_id", "")
+
+    header = Text()
+    header.append(f"Presentation: {title}\n", style="bold white")
+    header.append(f"ID:           {pres_id}\n", style="dim")
+    header.append(f"Total Slides: {slide_count}\n", style="cyan")
+
+    console.print(Panel(header, title="Google Slides", border_style="yellow"))
+
+    for s in info.get("slides", []):
+        s_num = s.get("slide_number")
+        s_id = s.get("slide_id")
+        content = s.get("content", [])
+        speaker_notes = s.get("speaker_notes")
+
+        slide_text = Text()
+        slide_text.append(f"Slide {s_num} (ID: {s_id})\n", style="bold cyan")
+        if content:
+            for block in content:
+                slide_text.append(f"  • {block}\n", style="white")
+        else:
+            slide_text.append("  [dim](No text elements)[/dim]\n")
+
+        if speaker_notes:
+            slide_text.append(f"\n  [italic dim]Speaker Notes:[/italic dim] {speaker_notes}\n")
+
+        console.print(Panel(slide_text, border_style="dim"))
+

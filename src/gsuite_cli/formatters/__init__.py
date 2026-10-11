@@ -10,9 +10,12 @@ from gsuite_cli.formatters.rich_out import (
     render_error,
     render_gmail_message,
     render_gmail_search_table,
+    render_presentation_info,
     render_sheets_table,
     render_status,
     render_success,
+    render_tasklists,
+    render_tasks_list,
     render_warning,
 )
 
@@ -27,8 +30,11 @@ __all__ = [
     "render_error",
     "render_gmail_message",
     "render_gmail_search_table",
+    "render_presentation_info",
     "render_sheets_table",
     "render_status",
     "render_success",
+    "render_tasklists",
+    "render_tasks_list",
     "render_warning",
 ]

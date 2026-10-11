@@ -115,3 +115,31 @@ gsuite sheets append <spreadsheet_id> \
   --values '[["2026-10-11T12:00:00Z", "task_completed", "agent_run"]]' \
   --json
 ```
+
+### Tasks Workflows
+```bash
+# List all task lists
+gsuite tasks lists --json
+
+# List pending tasks in default list
+gsuite tasks list --json
+
+# Add a new task with due date
+gsuite tasks add "Review budget proposal" --due "2026-10-15T00:00:00Z" --json
+
+# Mark task complete
+gsuite tasks done <task_id> --json
+```
+
+### Slides Workflows
+```bash
+# Inspect presentation metadata and slides
+gsuite slides info <presentation_id> --json
+
+# Read all slide content and speaker notes
+gsuite slides read <presentation_id> --json
+
+# Create a new presentation
+gsuite slides create "Q4 Strategy Pitch" --json
+```
+

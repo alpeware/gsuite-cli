@@ -15,6 +15,8 @@ from gsuite_cli.commands import (
     drive_group,
     gmail_group,
     sheets_group,
+    slides_group,
+    tasks_group,
 )
 from gsuite_cli.commands.common import GSuiteGroup
 from gsuite_cli.exceptions import GSuiteError
@@ -65,6 +67,8 @@ cli.add_command(calendar_group)
 cli.add_command(drive_group)
 cli.add_command(docs_group)
 cli.add_command(sheets_group)
+cli.add_command(slides_group)
+cli.add_command(tasks_group)
 
 
 def main() -> None:
