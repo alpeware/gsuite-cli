@@ -9,12 +9,15 @@ import click
 
 from gsuite_cli import __version__
 from gsuite_cli.commands import (
+    accounts_group,
     auth_group,
     calendar_group,
     docs_group,
     drive_group,
     gmail_group,
+    install_skill_cmd,
     sheets_group,
+    skill_group,
     slides_group,
     tasks_group,
 )
@@ -61,12 +64,15 @@ def cli(ctx: click.Context) -> None:
 
 
 # Register all subcommand groups
+cli.add_command(accounts_group)
 cli.add_command(auth_group)
 cli.add_command(gmail_group)
 cli.add_command(calendar_group)
 cli.add_command(drive_group)
 cli.add_command(docs_group)
 cli.add_command(sheets_group)
+cli.add_command(skill_group)
+cli.add_command(install_skill_cmd, name="install-skill")
 cli.add_command(slides_group)
 cli.add_command(tasks_group)
 

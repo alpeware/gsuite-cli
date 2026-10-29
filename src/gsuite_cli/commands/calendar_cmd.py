@@ -197,6 +197,13 @@ def calendar_freebusy(
 @click.option("--attendees", help="Comma-separated attendee emails")
 @click.option("--description", help="Event description notes")
 @click.option("--location", help="Event physical location or URL")
+@click.option("--meet", is_flag=True, default=False, help="Add Google Meet video conferencing")
+@click.option(
+    "--send-updates",
+    type=click.Choice(["all", "none", "external_only"]),
+    default="all",
+    help="Whether to send notifications about the creation of the new event",
+)
 @click.option("--account", "-a", help="Target account (defaults to default_account)")
 @click.pass_context
 def calendar_create(
@@ -207,6 +214,8 @@ def calendar_create(
     attendees: str | None,
     description: str | None,
     location: str | None,
+    meet: bool,
+    send_updates: str,
     account: str | None,
 ) -> None:
     """Create a new event on the primary calendar."""
@@ -234,6 +243,8 @@ def calendar_create(
             attendees=att_list,
             description=description,
             location=location,
+            meet=meet,
+            send_updates=send_updates,
             account_config=acc,
         )
     except Exception as e:
@@ -249,5 +260,7 @@ def calendar_create(
         render_success(f"Calendar event '{summary}' created successfully for '{email}'!")
         console.print(f"  Start: {res.get('start')}")
         console.print(f"  End:   {res.get('end')}")
+        if res.get("meet_link"):
+            console.print(f"  Meet:  {res.get('meet_link')}")
         if res.get("htmlLink"):
             console.print(f"  Link:  {res.get('htmlLink')}")

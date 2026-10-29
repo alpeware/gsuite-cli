@@ -15,6 +15,7 @@ from gsuite_cli.auth import (
     resolve_scopes,
     save_credentials,
 )
+from gsuite_cli.commands.accounts_cmd import accounts_list
 from gsuite_cli.commands.common import GSuiteGroup
 from gsuite_cli.config import AccountConfig, load_config, save_config
 from gsuite_cli.exceptions import ConfigError, GSuiteError
@@ -35,7 +36,11 @@ def auth_group() -> None:
 @auth_group.command(name="add")
 @click.argument("email", required=True)
 @click.option("--alias", help="Short mnemonic name for account (e.g. 'work', 'personal')")
-@click.option("--labels", help="Comma-separated labels (e.g. 'work,alpeware,primary')")
+@click.option(
+    "--labels",
+    "--tags",
+    help="Comma-separated labels or tags (e.g. 'work,alpeware,primary')",
+)
 @click.option("--headless", is_flag=True, help="Force headless out-of-band auth for SSH/Termux")
 @click.option(
     "--scopes",
@@ -362,3 +367,8 @@ def labels_list(ctx: click.Context) -> None:
             return
         for lbl, accounts in sorted(label_map.items()):
             console.print(f"[bold green]• {lbl}:[/bold green] {', '.join(accounts)}")
+
+
+# Aliases for tags and accounts under auth group
+auth_group.add_command(labels_group, name="tags")
+auth_group.add_command(accounts_list, name="accounts")

@@ -19,14 +19,27 @@ dist/
 *.egg-info/
 *.egg
 
-# Secrets and OAuth credentials (CRITICAL: never commit credentials)
+# Secrets, Environment Variables, and OAuth credentials (CRITICAL: never commit credentials)
+.env
+.env.*
+*.env
 client_secret*.json
 *.pem
 *.key
 *.p12
+*.crt
+*.cer
 tokens/
+*.token
 *.token.json
+token*.json
 credentials*.json
+
+# Testing and Coverage
+.coverage
+htmlcov/
+.coverage.*
+*.log
 
 # OS and editor files
 .DS_Store

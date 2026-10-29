@@ -33,11 +33,21 @@ accounts via the `gsuite` command-line tool.
 
 ### Account & Configuration
 ```bash
+# List all available accounts with tags
+gsuite accounts --json
+
+# Filter accounts by tag
+gsuite accounts --tag work --json
+
 # List configured accounts, aliases, labels, and token health
 gsuite auth list --json
 
 # Test token validity across all accounts
 gsuite auth test --all --json
+
+# Install this skill for Antigravity CLI locally or globally
+gsuite skill install --local
+gsuite skill install --global
 ```
 
 ### Gmail Workflows

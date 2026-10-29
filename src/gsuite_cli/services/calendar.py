@@ -153,6 +153,8 @@ def create_event(
     attendees: list[str] | None = None,
     description: str | None = None,
     location: str | None = None,
+    meet: bool = False,
+    send_updates: str | None = None,
     account_config: AccountConfig | None = None,
 ) -> dict[str, Any]:
     """Create a new event on the primary calendar."""
@@ -170,9 +172,24 @@ def create_event(
     if attendees:
         body["attendees"] = [{"email": a} for a in attendees]
 
-    insert_call = service.events().insert(calendarId="primary", body=body)
+    insert_kwargs: dict[str, Any] = {"calendarId": "primary", "body": body}
+    if meet:
+        import uuid
+
+        body["conferenceData"] = {
+            "createRequest": {
+                "requestId": str(uuid.uuid4()),
+                "conferenceSolutionKey": {"type": "hangoutsMeet"},
+            }
+        }
+        insert_kwargs["conferenceDataVersion"] = 1
+    if send_updates:
+        insert_kwargs["sendUpdates"] = send_updates
+
+    insert_call = service.events().insert(**insert_kwargs)
     resp = execute_api_call(insert_call, "Calendar", email_addr)
 
+    meet_link = resp.get("hangoutLink", "")
     return {
         "status": "success",
         "action": "event_created",
@@ -181,4 +198,5 @@ def create_event(
         "start": _format_event_time(resp.get("start")),
         "end": _format_event_time(resp.get("end")),
         "htmlLink": resp.get("htmlLink", ""),
+        "meet_link": meet_link,
     }

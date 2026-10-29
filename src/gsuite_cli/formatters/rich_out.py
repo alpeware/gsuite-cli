@@ -11,8 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-console = Console(file=sys.stdout)
-err_console = Console(file=sys.stderr)
+console = Console()
+err_console = Console(stderr=True)
 
 
 def render_accounts_table(
@@ -46,6 +46,34 @@ def render_accounts_table(
         scopes_str = f"{scopes_count} scopes"
 
         table.add_row(email, alias, is_default, labels_str, status_text, scopes_str)
+
+    console.print(table)
+
+
+def render_accounts_tags_table(
+    accounts_data: list[dict[str, Any]],
+    default_account: str | None = None,
+    filter_tag: str | None = None,
+) -> None:
+    """Render a clean terminal table of accounts, aliases, default flag, and tags."""
+    title = "Available Google Accounts & Tags"
+    if filter_tag:
+        title += f" (Filtered by tag: [bold green]#{filter_tag}[/bold green])"
+
+    table = Table(title=title, show_lines=True)
+    table.add_column("Account (Email)", style="cyan", no_wrap=True)
+    table.add_column("Alias", style="magenta")
+    table.add_column("Default", justify="center", style="bold yellow")
+    table.add_column("Tags", style="green")
+
+    for acc in accounts_data:
+        email = acc.get("email", "")
+        alias = acc.get("alias") or "[dim]-[/dim]"
+        is_default = "★ [bold yellow]YES[/bold yellow]" if acc.get("default", False) else "[dim]-[/dim]"
+        tags = acc.get("tags") or acc.get("labels") or []
+        tags_str = ", ".join(f"#{t}" for t in tags) if tags else "[dim]none[/dim]"
+
+        table.add_row(email, alias, is_default, tags_str)
 
     console.print(table)
 
