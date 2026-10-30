@@ -7,12 +7,17 @@ import os
 import stat
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
+from gsuite_cli.auth.scopes import resolve_scopes
 from gsuite_cli.config import TOKENS_DIR, ensure_config_dir
 from gsuite_cli.exceptions import AuthError, TokenExpiredError
+
+if TYPE_CHECKING:
+    from gsuite_cli.config import AccountConfig
 
 
 def enforce_secure_permissions(path: Path) -> None:
@@ -120,3 +125,26 @@ def delete_credentials(email: str, custom_path: str | None = None) -> bool:
         except OSError as e:
             raise AuthError(f"Failed to remove token file {token_path}: {e}", account=email)
     return False
+
+
+def load_account_credentials(
+    email: str,
+    account_config: AccountConfig | None = None,
+    auto_refresh: bool = True,
+) -> Any:
+    """Load credentials for an account, dispatching to either OAuth or Service Account."""
+    if account_config and account_config.auth_type == "service_account":
+        from gsuite_cli.auth.service_account import load_sa_credentials
+
+        key_path = account_config.resolved_key_path(email)
+        subject = account_config.resolved_subject(email)
+        scopes = account_config.scopes or resolve_scopes("standard")
+        return load_sa_credentials(
+            key_path,
+            scopes=scopes,
+            subject=subject,
+            verify_refresh=auto_refresh,
+        )
+
+    token_path = account_config.token_file if account_config else None
+    return load_credentials(email, custom_path=token_path, auto_refresh=auto_refresh)

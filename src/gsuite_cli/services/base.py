@@ -8,12 +8,12 @@ from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
 
-from gsuite_cli.auth.token_store import load_credentials
+from gsuite_cli.auth.token_store import load_account_credentials
 from gsuite_cli.config import AccountConfig
-from gsuite_cli.exceptions import ServiceError, TokenExpiredError
+from gsuite_cli.exceptions import AuthError, ServiceError, TokenExpiredError
 
-# Cache of initialized service resources per (account, service_name, version)
-_SERVICE_CACHE: dict[tuple[str, str, str], Resource] = {}
+# Cache of initialized service resources per (account, service_name, version, auth_type, subject)
+_SERVICE_CACHE: dict[tuple[str, str, str, str, str | None], Resource] = {}
 
 
 def get_service_client(
@@ -23,15 +23,22 @@ def get_service_client(
     account_config: AccountConfig | None = None,
 ) -> Resource:
     """Build and return an authenticated Google API service client."""
-    cache_key = (email, service_name, version)
+    auth_type = account_config.auth_type if account_config else "oauth"
+    subject = account_config.resolved_subject(email) if account_config else None
+    cache_key = (email, service_name, version, auth_type, subject)
     if cache_key in _SERVICE_CACHE:
         return _SERVICE_CACHE[cache_key]
 
-    token_path = account_config.token_file if account_config else None
+    is_sa = bool(account_config and account_config.auth_type == "service_account")
+    auto_refresh = not is_sa
 
     try:
-        credentials = load_credentials(email, custom_path=token_path, auto_refresh=True)
-    except TokenExpiredError:
+        credentials = load_account_credentials(
+            email,
+            account_config=account_config,
+            auto_refresh=auto_refresh,
+        )
+    except (TokenExpiredError, AuthError):
         raise
     except Exception as e:
         raise TokenExpiredError(
@@ -69,6 +76,19 @@ def execute_api_call(call_callable: Any, service_name: str, email: str) -> Any:
                 f"Authentication expired or revoked for {email}. Run 'gsuite auth add {email}'.",
                 account=email,
             )
+        if (
+            status_code == 400
+            and "precondition check failed" in str(e).lower()
+            and service_name.lower() == "gmail"
+        ):
+            raise ServiceError(
+                f"Google {service_name} API HTTP 400 Precondition check failed for {email}. "
+                "Gmail API requires Domain-Wide Delegation (impersonating a Google Workspace user subject) when using a service account.",
+                service=service_name,
+                account=email,
+                status_code=400,
+                details={"content": str(e.content) if hasattr(e, "content") else str(e)},
+            )
         raise ServiceError(
             f"Google {service_name} API HTTP {status_code} error: {reason}",
             service=service_name,
@@ -77,6 +97,11 @@ def execute_api_call(call_callable: Any, service_name: str, email: str) -> Any:
             details={"content": str(e.content) if hasattr(e, "content") else str(e)},
         )
     except RefreshError as e:
+        if "unauthorized_client" in str(e).lower():
+            raise AuthError(
+                f"Domain-Wide Delegation authorization is missing in Google Workspace Admin Console for {email}: {e}",
+                account=email,
+            )
         raise TokenExpiredError(
             f"Refresh token expired or revoked for {email}: {e}. Run 'gsuite auth add {email}'.",
             account=email,

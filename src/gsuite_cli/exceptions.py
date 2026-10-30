@@ -33,6 +33,7 @@ class AuthError(GSuiteError):
         if account:
             details["account"] = account
         super().__init__(message, code="AUTH_ERROR", details=details)
+        self.account = account
 
 
 class TokenExpiredError(AuthError):
