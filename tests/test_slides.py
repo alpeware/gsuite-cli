@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 from gsuite_cli.services.slides import (
     create_presentation,
-    get_presentation,
     read_presentation_text,
 )
 

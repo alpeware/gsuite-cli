@@ -11,7 +11,6 @@ from gsuite_cli.config import AccountConfig, load_config
 from gsuite_cli.formatters import (
     print_json,
     render_error,
-    render_status,
     render_success,
     render_tasklists,
     render_tasks_list,

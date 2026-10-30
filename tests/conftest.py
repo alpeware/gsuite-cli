@@ -14,11 +14,13 @@ from gsuite_cli.config import AccountConfig, GSuiteConfig, GSuiteSettings
 
 @pytest.fixture
 def mock_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Create and monkeypatch isolated config and token directories."""
+    """Create and monkeypatch isolated config, token, and key directories."""
     cfg_dir = tmp_path / "gsuite"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     tokens_dir = cfg_dir / "tokens"
     tokens_dir.mkdir(parents=True, exist_ok=True)
+    keys_dir = cfg_dir / "keys"
+    keys_dir.mkdir(parents=True, exist_ok=True)
     cfg_file = cfg_dir / "config.json"
     client_secret_file = cfg_dir / "client_secret.json"
 
@@ -39,6 +41,7 @@ def mock_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr("gsuite_cli.config.CONFIG_DIR", cfg_dir)
     monkeypatch.setattr("gsuite_cli.config.CONFIG_FILE", cfg_file)
     monkeypatch.setattr("gsuite_cli.config.TOKENS_DIR", tokens_dir)
+    monkeypatch.setattr("gsuite_cli.config.KEYS_DIR", keys_dir)
     monkeypatch.setattr("gsuite_cli.config.CLIENT_SECRET_FILE", client_secret_file)
 
     monkeypatch.setattr("gsuite_cli.auth.token_store.TOKENS_DIR", tokens_dir)

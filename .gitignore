@@ -30,10 +30,14 @@ client_secret*.json
 *.crt
 *.cer
 tokens/
+keys/
 *.token
 *.token.json
 token*.json
 credentials*.json
+*service_account*.json
+*sa-key*.json
+*sa_key*.json
 
 # Testing and Coverage
 .coverage

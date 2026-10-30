@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +16,7 @@ CONFIG_DIR = Path.home() / ".config" / "gsuite"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CLIENT_SECRET_FILE = CONFIG_DIR / "client_secret.json"
 TOKENS_DIR = CONFIG_DIR / "tokens"
+KEYS_DIR = CONFIG_DIR / "keys"
 
 
 class AccountConfig(BaseModel):
@@ -22,7 +24,11 @@ class AccountConfig(BaseModel):
 
     alias: str | None = None
     labels: list[str] = Field(default_factory=list)
+    auth_type: Literal["oauth", "service_account"] = "oauth"
     token_file: str | None = None
+    key_file: str | None = None
+    subject: str | None = None
+    impersonate: bool = True
     scopes: list[str] = Field(default_factory=list)
     created_at: str | None = None
 
@@ -31,6 +37,32 @@ class AccountConfig(BaseModel):
         if self.token_file:
             return Path(os.path.expanduser(self.token_file))
         return TOKENS_DIR / f"{email}.json"
+
+    def resolved_key_path(self, email: str) -> Path:
+        """Return the fully expanded path to the service account key file."""
+        if self.key_file:
+            return Path(os.path.expanduser(self.key_file))
+        return KEYS_DIR / f"{email}.json"
+
+    def resolved_subject(self, email: str) -> str | None:
+        """Return the impersonation subject email if applicable."""
+        if self.auth_type != "service_account" or not self.impersonate:
+            return None
+        return self.subject or email
+
+
+class DomainConfig(BaseModel):
+    """Configuration for domain-wide delegation for an entire hosted domain."""
+
+    domain: str
+    key_file: str
+    scopes: list[str] = Field(default_factory=list)
+    labels: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+
+    def resolved_key_path(self) -> Path:
+        """Return the fully expanded path to the domain service account key file."""
+        return Path(os.path.expanduser(self.key_file))
 
 
 class GSuiteSettings(BaseModel):
@@ -48,6 +80,7 @@ class GSuiteConfig(BaseModel):
     version: str = "1.0"
     default_account: str | None = None
     accounts: dict[str, AccountConfig] = Field(default_factory=dict)
+    domains: dict[str, DomainConfig] = Field(default_factory=dict)
     settings: GSuiteSettings = Field(default_factory=GSuiteSettings)
 
     def find_account_by_alias(self, alias: str) -> tuple[str, AccountConfig] | None:
@@ -58,7 +91,7 @@ class GSuiteConfig(BaseModel):
         return None
 
     def get_account(self, identifier: str) -> tuple[str, AccountConfig]:
-        """Lookup an account by email or alias. Raises TargetingError if not found."""
+        """Lookup an account by email, alias, or domain wildcard. Raises TargetingError if not found."""
         if identifier in self.accounts:
             return identifier, self.accounts[identifier]
 
@@ -66,10 +99,32 @@ class GSuiteConfig(BaseModel):
         if by_alias:
             return by_alias
 
+        # Wildcard domain fallback
+        if "@" in identifier:
+            domain = identifier.rsplit("@", 1)[1].lower()
+            for dom_name, dom_cfg in self.domains.items():
+                if dom_name.lower() == domain:
+                    return (
+                        identifier,
+                        AccountConfig(
+                            alias=None,
+                            labels=list(dom_cfg.labels),
+                            auth_type="service_account",
+                            key_file=dom_cfg.key_file,
+                            subject=identifier,
+                            impersonate=True,
+                            scopes=list(dom_cfg.scopes),
+                            created_at=dom_cfg.created_at,
+                        ),
+                    )
+
         known = list(self.accounts.keys())
+        details: dict[str, Any] = {"requested": identifier, "available_accounts": known}
+        if self.domains:
+            details["available_domains"] = list(self.domains.keys())
         raise TargetingError(
             f"Account '{identifier}' not found in configuration.",
-            details={"requested": identifier, "available_accounts": known},
+            details=details,
         )
 
     def resolve_targets(
@@ -130,12 +185,14 @@ class GSuiteConfig(BaseModel):
 
 
 def ensure_config_dir() -> Path:
-    """Ensure ~/.config/gsuite and tokens directory exist with secure permissions (0700)."""
+    """Ensure ~/.config/gsuite, tokens, and keys directories exist with secure permissions (0700)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     TOKENS_DIR.mkdir(parents=True, exist_ok=True)
+    KEYS_DIR.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(CONFIG_DIR, 0o700)
         os.chmod(TOKENS_DIR, 0o700)
+        os.chmod(KEYS_DIR, 0o700)
     except OSError:
         pass
     return CONFIG_DIR

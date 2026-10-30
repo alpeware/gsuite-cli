@@ -15,7 +15,6 @@ from gsuite_cli.formatters import (
 from gsuite_cli.router import resolve_command_targets
 from gsuite_cli.services.slides import (
     create_presentation,
-    get_presentation,
     read_presentation_text,
 )
 
