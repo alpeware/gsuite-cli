@@ -95,3 +95,19 @@ def test_cli_install_skill_alias(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "installed successfully" in result.output
     assert (dest / "SKILL.md").exists()
+
+
+def test_skill_files_in_sync_and_document_dwd() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    agent_skill = repo_root / ".agents" / "skills" / "gsuite" / "SKILL.md"
+    src_skill = repo_root / "src" / "gsuite_cli" / "skills" / "gsuite" / "SKILL.md"
+
+    assert agent_skill.exists(), f"Missing {agent_skill}"
+    assert src_skill.exists(), f"Missing {src_skill}"
+
+    agent_content = agent_skill.read_text(encoding="utf-8")
+    src_content = src_skill.read_text(encoding="utf-8")
+
+    assert agent_content == src_content, "Skill markdown files are not in sync!"
+    assert "--service-account" in agent_content
+    assert "auth domain" in agent_content

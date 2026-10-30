@@ -33,6 +33,8 @@ uv pip install -e ".[dev]"
 
 ## Configuration & Authentication
 
+### 1. Interactive OAuth 2.0 (Consumer Gmail & Workspace)
+
 1. Place your Google Cloud OAuth 2.0 Desktop Application credentials at `~/.config/gsuite/client_secret.json`.
 2. Add your Google accounts:
    ```bash
@@ -46,6 +48,54 @@ uv pip install -e ".[dev]"
    ```bash
    gsuite auth test --all
    ```
+
+### 2. Service Accounts & Domain-Wide Delegation (Google Workspace)
+
+For headless server nodes, background automations, CI/CD, or managing multiple users across an organization, `gsuite-cli` supports Google Cloud Service Accounts with Domain-Wide Delegation (DWD).
+
+#### Step A: Inspect Service Account Client ID & OAuth Scopes
+Inspect your service account JSON key file to extract its unique `Client ID` and required comma-separated scopes:
+```bash
+gsuite auth dwd-info --key-file /path/to/sa-key.json --scopes standard
+```
+
+#### Step B: Authorize in Google Workspace Admin Console
+1. Open the [Google Workspace Admin Console](https://admin.google.com).
+2. Navigate to **Security > Access and data control > API controls > Domain-wide Delegation**.
+3. Click **Add new**.
+4. In **Client ID**, enter the `client_id` from Step A.
+5. In **OAuth scopes (comma-separated)**, paste the `scopes_csv` from Step A.
+6. Click **Authorize**.
+
+#### Step C: Register Delegated Accounts or Wildcard Domains
+
+* **1:1 Delegated Account Registration:**
+  Register a specific Workspace user email impersonated via the service account:
+  ```bash
+  gsuite auth add work@mycompany.com --service-account /path/to/sa-key.json --alias work --labels work
+  ```
+
+* **Wildcard Workspace Domain Registration (Recommended for Teams):**
+  Register your entire hosted Google Workspace domain once. Any `<user>@mycompany.com` can then be dynamically targeted on the fly via `--account` without registering users individually:
+  ```bash
+  # Register the wildcard domain
+  gsuite auth domain add mycompany.com --service-account /path/to/sa-key.json --scopes standard --tags work
+
+  # Target any domain user dynamically
+  gsuite calendar agenda --account alice@mycompany.com --json
+  gsuite gmail search "is:unread" --account bob@mycompany.com --json
+
+  # Inspect or manage registered wildcard domains
+  gsuite auth domain list --json
+  gsuite auth domain info mycompany.com --json
+  gsuite auth domain remove mycompany.com --json
+  ```
+
+* **Direct Service Account Mode (No Impersonation):**
+  Authenticate directly as the raw service account principal for resources shared directly with the service account email (e.g. shared Google Drive folders or calendars):
+  ```bash
+  gsuite auth add bot@project.iam.gserviceaccount.com --service-account /path/to/sa-key.json --no-impersonate
+  ```
 
 ---
 

@@ -45,6 +45,20 @@ gsuite auth list --json
 # Test token validity across all accounts
 gsuite auth test --all --json
 
+# Inspect Service Account Client ID & Scopes for Google Workspace Admin Console DWD setup
+gsuite auth dwd-info --key-file /path/to/sa-key.json --scopes standard
+
+# Register a specific Workspace user backed by a Service Account (Domain-Wide Delegation)
+gsuite auth add user@example.com --service-account /path/to/sa-key.json --alias work --tags work
+
+# Register a raw Service Account directly (no user impersonation)
+gsuite auth add bot@project.iam.gserviceaccount.com --service-account /path/to/sa-key.json --no-impersonate
+
+# Register an entire Workspace domain for wildcard Domain-Wide Delegation (target any user@example.com on the fly)
+gsuite auth domain add example.com --service-account /path/to/sa-key.json --scopes standard --tags work
+gsuite auth domain list --json
+gsuite auth domain info example.com --json
+
 # Install this skill for Antigravity CLI locally or globally
 gsuite skill install --local
 gsuite skill install --global

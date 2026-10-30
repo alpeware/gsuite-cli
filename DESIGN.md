@@ -26,7 +26,9 @@ Users frequently operate across multiple distinct Google identities:
 * **Organizational / Non-profit Domains:** e.g., foundations, client accounts, or project-specific emails.
 
 > [!IMPORTANT]
-> **Domain-Wide Delegation (Service Accounts) is insufficient** because it only works on Workspace enterprise domains with Super Admin privileges and fails completely on consumer `@gmail.com` accounts. `gsuite-cli` relies on **OAuth 2.0 Desktop Application** authorization, providing a unified authorization model that works identically across consumer Gmail and all Workspace tiers.
+> `gsuite-cli` adopts a **dual-track authentication model** designed for heterogeneous environments:
+> 1. **OAuth 2.0 Desktop Application Authorization:** A unified, interactive consent flow that works identically across consumer `@gmail.com` accounts and individual Google Workspace accounts.
+> 2. **Service Accounts & Domain-Wide Delegation (DWD):** An enterprise-grade, headless authorization model for automated background tasks, CI/CD pipelines, and organization-wide wildcard domain access on Google Workspace without requiring individual user login prompts.
 
 ### 1.4 Cluster-Ready & Headless Design
 The CLI is built to run seamlessly across heterogeneous environments:
@@ -84,6 +86,7 @@ flowchart TD
 
 ### 2.1 Configuration Schema (`~/.config/gsuite/config.json`)
 Configuration is maintained in standard XDG path `~/.config/gsuite/config.json` with strict `0600` permissions.
+Service Account keys are stored in `KEYS_DIR = ~/.config/gsuite/keys/` (`0700` directory, `0600` files).
 
 ```json
 {
@@ -93,7 +96,11 @@ Configuration is maintained in standard XDG path `~/.config/gsuite/config.json` 
     "alpeware@gmail.com": {
       "alias": "alpe-personal",
       "labels": ["personal", "alpeware", "primary"],
+      "auth_type": "oauth",
       "token_file": "~/.config/gsuite/tokens/alpeware@gmail.com.json",
+      "key_file": null,
+      "subject": null,
+      "impersonate": true,
       "scopes": [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/calendar",
@@ -101,10 +108,14 @@ Configuration is maintained in standard XDG path `~/.config/gsuite/config.json` 
       ],
       "created_at": "2026-10-11T09:15:00Z"
     },
-    "root@alpeware.com": {
+    "work@alpeware.com": {
       "alias": "alpe-work",
       "labels": ["work", "alpeware", "workspace"],
-      "token_file": "~/.config/gsuite/tokens/root@alpeware.com.json",
+      "auth_type": "service_account",
+      "token_file": null,
+      "key_file": "~/.config/gsuite/keys/work@alpeware.com.json",
+      "subject": "work@alpeware.com",
+      "impersonate": true,
       "scopes": [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/calendar",
@@ -114,15 +125,45 @@ Configuration is maintained in standard XDG path `~/.config/gsuite/config.json` 
       ],
       "created_at": "2026-10-11T09:20:00Z"
     },
+    "bot@project.iam.gserviceaccount.com": {
+      "alias": "gsuite-bot",
+      "labels": ["automation", "bot"],
+      "auth_type": "service_account",
+      "token_file": null,
+      "key_file": "~/.config/gsuite/keys/bot@project.iam.gserviceaccount.com.json",
+      "subject": null,
+      "impersonate": false,
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.readonly"
+      ],
+      "created_at": "2026-10-11T09:22:00Z"
+    },
     "foundation@nonprofit.org": {
       "alias": "foundation",
       "labels": ["foundation", "nonprofit", "work"],
+      "auth_type": "oauth",
       "token_file": "~/.config/gsuite/tokens/foundation@nonprofit.org.json",
+      "key_file": null,
+      "subject": null,
+      "impersonate": true,
       "scopes": [
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/calendar.readonly"
       ],
       "created_at": "2026-10-11T09:25:00Z"
+    }
+  },
+  "domains": {
+    "alpeware.com": {
+      "domain": "alpeware.com",
+      "key_file": "~/.config/gsuite/keys/alpeware.com.json",
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/drive"
+      ],
+      "labels": ["work", "alpeware"],
+      "created_at": "2026-10-11T09:30:00Z"
     }
   },
   "settings": {
@@ -138,14 +179,18 @@ Configuration is maintained in standard XDG path `~/.config/gsuite/config.json` 
 Commands resolve target accounts via four mutually exclusive modes:
 
 1. **Explicit Account (`--account <email|alias>`):**
-   * Matches against either the canonical email address or configured alias.
-   * Executes against exactly one account.
-   * Example: `gsuite gmail search "urgent" --account alpe-work`
+   * **Exact Account Match:** Checks `self.accounts` for an exact email address match.
+   * **Alias Match:** Matches configured aliases via `self.find_account_by_alias(identifier)`.
+   * **Wildcard Domain Fallback:** If `identifier` contains `@`, extracts `domain = identifier.rsplit("@", 1)[1].lower()`. If configured in `self.domains`, dynamically constructs an ephemeral `AccountConfig` targeting that user via Domain-Wide Delegation (`subject=identifier`, `impersonate=True`) inheriting the domain's key file, scopes, and labels.
+   * If no account, alias, or domain matches, raises `TargetingError` listing available accounts, aliases, and registered wildcard domains.
+   * Examples:
+     * `gsuite gmail search "urgent" --account alpe-work` (resolved via alias)
+     * `gsuite calendar agenda --account alice@alpeware.com` (dynamically synthesized via wildcard domain `alpeware.com`)
 
 2. **Label Grouping (`--label <label>`):**
    * Filters the accounts dictionary for any account where `labels` contains `<label>`.
    * Fan-out execution across all matching accounts in parallel.
-   * Example: `gsuite calendar agenda --label work` (aggregates calendar events from both `root@alpeware.com` and `foundation@nonprofit.org`).
+   * Example: `gsuite calendar agenda --label work` (aggregates calendar events from both `work@alpeware.com` and `foundation@nonprofit.org`).
 
 3. **Global Fan-out (`--all`):**
    * Fan-out execution across *every* configured account.
@@ -251,6 +296,21 @@ To support the principle of least privilege, `gsuite auth add` supports predefin
 | **`full`** | `gmail.send`<br>`gmail.modify`<br>`calendar`<br>`drive` | Unrestricted access including background email sending and full Drive control. |
 | **Custom** | User-specified URL list via `--scope <url>` | Precision access control. |
 
+### 3.5 Service Accounts & Domain-Wide Delegation (Google Workspace)
+For automated background processes, CI/CD runners, and headless server environments, `gsuite-cli` supports GCP Service Account authentication with Domain-Wide Delegation (DWD):
+* **Key Storage:** Service Account JSON keys are stored in `KEYS_DIR = ~/.config/gsuite/keys/` with directory `0700` (`drwx------`) and file `0600` (`-rw-------`) permissions.
+* **Authentication Mechanics:** Direct assertion of OAuth 2.0 access tokens via RFC 7523 JWT bearer token exchange against `https://oauth2.googleapis.com/token` signed with the service account private key (`google.oauth2.service_account.Credentials`).
+* **Operational Modes:**
+  * **Domain-Wide Delegation Impersonation (Default):** Targets a specific Workspace user by setting `subject = <user_email>`. All API operations execute with the permissions and within the context of that delegated user.
+  * **Direct Service Account Principal (`--no-impersonate`):** Operates directly as the service account identity (`subject = None`). Useful for accessing resources shared directly with the service account email (e.g. Google Drive shared folders).
+* **Setup Workflow:**
+  1. Inspect the service account's OAuth Client ID and comma-separated scopes:
+     ```bash
+     gsuite auth dwd-info --key-file /path/to/sa-key.json --scopes standard
+     ```
+  2. Authorize the `client_id` and comma-separated scopes in the Google Workspace Admin Console under **Security > Access and data control > API controls > Domain-wide Delegation**.
+  3. Register 1:1 delegated accounts or register the entire Google Workspace domain for dynamic wildcard user resolution.
+
 ---
 
 ## 4. CLI Command Surface & Output Specification
@@ -271,11 +331,17 @@ All commands inherit the following flags:
 ```text
 gsuite
 ├── auth
-│   ├── add <email>            # Register and authenticate an account
+│   ├── add <email>            # Register and authenticate an account (OAuth or Service Account)
 │   ├── list                   # Display configured accounts, health, and labels
-│   ├── remove <email>         # Revoke token and remove account config
-│   ├── test                   # Validate tokens and check API reachability
+│   ├── remove <email>         # Revoke token/unlink key and remove account config
+│   ├── test                   # Validate tokens/keys and check API reachability
 │   ├── default <email>        # Set the fallback default account
+│   ├── dwd-info               # Extract Client ID and OAuth scopes for Workspace DWD setup
+│   ├── domain                 # Manage wildcard Google Workspace domains
+│   │   ├── add <domain>       # Register a domain for wildcard DWD impersonation
+│   │   ├── list               # List configured wildcard domains
+│   │   ├── info <domain>      # Show domain details and DWD configuration
+│   │   └── remove <domain>    # Remove a wildcard domain
 │   └── labels
 │       ├── add <email> <l>    # Add label(s) to account
 │       ├── remove <email> <l> # Remove label from account
@@ -310,6 +376,21 @@ gsuite auth add alpeware@gmail.com --alias alpe-personal --labels personal,prima
 
 # Add an account in a headless SSH/Termux environment with standard scopes
 gsuite auth add root@alpeware.com --alias alpe-work --labels work,alpeware --headless --scopes standard
+
+# Inspect Service Account Client ID & Scopes for Google Workspace Admin Console DWD setup
+gsuite auth dwd-info --key-file /path/to/sa-key.json --scopes standard
+
+# Register a specific Workspace user backed by a Service Account (Domain-Wide Delegation)
+gsuite auth add work@alpeware.com --service-account /path/to/sa-key.json --alias work --labels work
+
+# Register a raw Service Account directly (no user impersonation)
+gsuite auth add bot@project.iam.gserviceaccount.com --service-account /path/to/sa-key.json --no-impersonate
+
+# Register an entire Workspace domain for wildcard Domain-Wide Delegation (target any user@alpeware.com on the fly)
+gsuite auth domain add alpeware.com --service-account /path/to/sa-key.json --scopes standard --labels work
+gsuite auth domain list --json
+gsuite auth domain info alpeware.com --json
+gsuite auth domain remove alpeware.com
 
 # Test all account tokens and print connectivity status table
 gsuite auth test --all
