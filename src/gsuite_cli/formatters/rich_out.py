@@ -40,6 +40,18 @@ def render_accounts_table(
                 status_text = f"[red]{st.get('error', 'Invalid')}[/red]"
             elif st.get("expired", False):
                 status_text = "[yellow]Expired (Auto-refresh)[/yellow]"
+            elif st.get("auth_type") == "service_account" or getattr(acc, "auth_type", "oauth") == "service_account":
+                impersonate = getattr(acc, "impersonate", True)
+                if impersonate:
+                    status_text = "[green]Service Account (DWD)[/green]"
+                else:
+                    status_text = "[green]Service Account (Direct)[/green]"
+        elif getattr(acc, "auth_type", "oauth") == "service_account":
+            impersonate = getattr(acc, "impersonate", True)
+            if impersonate:
+                status_text = "[green]Service Account (DWD)[/green]"
+            else:
+                status_text = "[green]Service Account (Direct)[/green]"
 
         scopes_count = len(acc.scopes) if acc.scopes else 0
         scopes_str = f"{scopes_count} scopes"

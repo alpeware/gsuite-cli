@@ -33,9 +33,17 @@ def accounts_list(ctx: click.Context, filter_tag: str | None = None, **kwargs: A
         is_json = True
     config = load_config()
 
-    if not config.accounts:
+    if not config.accounts and not config.domains:
         if is_json:
-            print_json({"status": "success", "count": 0, "accounts": [], "default_account": None})
+            print_json(
+                {
+                    "status": "success",
+                    "count": 0,
+                    "accounts": [],
+                    "domains": [],
+                    "default_account": None,
+                }
+            )
         else:
             console.print(
                 "[yellow]No accounts registered yet.[/yellow] Run 'gsuite auth add <email>' to get started."
@@ -52,6 +60,8 @@ def accounts_list(ctx: click.Context, filter_tag: str | None = None, **kwargs: A
                 "email": email,
                 "alias": acc.alias,
                 "default": email == config.default_account,
+                "auth_type": acc.auth_type,
+                "subject": acc.resolved_subject(email),
                 "tags": tags,
                 "labels": tags,
                 "scopes_count": len(acc.scopes),
@@ -67,6 +77,7 @@ def accounts_list(ctx: click.Context, filter_tag: str | None = None, **kwargs: A
                 "default_account": config.default_account,
                 "filter_tag": filter_tag,
                 "accounts": accounts_data,
+                "domains": [d.model_dump() for d in config.domains.values()],
             }
         )
     else:

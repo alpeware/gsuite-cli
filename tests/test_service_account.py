@@ -9,6 +9,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click.testing import CliRunner
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
@@ -21,9 +24,17 @@ from gsuite_cli.auth.service_account import (
     validate_service_account_key,
 )
 from gsuite_cli.auth.token_store import load_account_credentials
-from gsuite_cli.config import AccountConfig, DomainConfig, GSuiteConfig
+from gsuite_cli.config import AccountConfig, DomainConfig, GSuiteConfig, load_config
 from gsuite_cli.exceptions import AuthError, ConfigError, ServiceError, TokenExpiredError
+from gsuite_cli.main import cli
 from gsuite_cli.services.base import _SERVICE_CACHE, execute_api_call, get_service_client
+
+_TEST_PRIVATE_KEY_OBJ = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+VALID_TEST_RSA_KEY = _TEST_PRIVATE_KEY_OBJ.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+).decode("utf-8")
 
 
 def _write_dummy_sa_key(
@@ -31,7 +42,7 @@ def _write_dummy_sa_key(
     key_type: str = "service_account",
     client_email: str = "sa@test-project.iam.gserviceaccount.com",
     client_id: str = "98765432101234567890",
-    private_key: str = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQD...\n-----END PRIVATE KEY-----\n",
+    private_key: str = VALID_TEST_RSA_KEY,
     token_uri: str = "https://oauth2.googleapis.com/token",
     project_id: str = "test-project",
 ) -> Path:
@@ -447,3 +458,325 @@ def test_execute_api_call_gmail_precondition_check_failed() -> None:
 
     assert "Gmail API requires Domain-Wide Delegation" not in str(exc_info_drive.value)
     assert "Google drive API HTTP 400 error" in str(exc_info_drive.value)
+
+
+# ---------------------------------------------------------------------------
+# 7. CLI command unit tests
+# ---------------------------------------------------------------------------
+
+def test_cli_auth_add_service_account_no_verify(mock_config_dir: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "sa.json")
+
+    result = runner.invoke(
+        cli,
+        [
+            "auth",
+            "add",
+            "alice@example.com",
+            "--service-account",
+            str(key_file),
+            "--no-verify",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "success"
+    assert data["account"] == "alice@example.com"
+    assert data["auth_type"] == "service_account"
+    assert data["subject"] == "alice@example.com"
+    assert data["impersonate"] is True
+
+    cfg = load_config()
+    assert "alice@example.com" in cfg.accounts
+    acc = cfg.accounts["alice@example.com"]
+    assert acc.auth_type == "service_account"
+    assert acc.impersonate is True
+
+
+@patch("gsuite_cli.commands.auth_cmd.load_sa_credentials")
+def test_cli_auth_add_service_account_with_verify(
+    mock_load_sa: MagicMock,
+    mock_config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "sa.json")
+
+    result = runner.invoke(
+        cli,
+        [
+            "auth",
+            "add",
+            "verified@example.com",
+            "--service-account",
+            str(key_file),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    mock_load_sa.assert_called_once()
+    assert mock_load_sa.call_args[1]["verify_refresh"] is True
+
+
+def test_cli_auth_add_service_account_no_impersonate(mock_config_dir: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "sa.json")
+
+    result = runner.invoke(
+        cli,
+        [
+            "auth",
+            "add",
+            "bot@proj.iam.gserviceaccount.com",
+            "--service-account",
+            str(key_file),
+            "--no-impersonate",
+            "--no-verify",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "success"
+    assert data["account"] == "bot@proj.iam.gserviceaccount.com"
+    assert data["auth_type"] == "service_account"
+    assert data["subject"] is None
+    assert data["impersonate"] is False
+
+    cfg = load_config()
+    acc = cfg.accounts["bot@proj.iam.gserviceaccount.com"]
+    assert acc.auth_type == "service_account"
+    assert acc.impersonate is False
+
+
+def test_cli_auth_domain_commands(mock_config_dir: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "domain_sa.json")
+
+    # 1. domain add
+    res_add = runner.invoke(
+        cli,
+        [
+            "auth",
+            "domain",
+            "add",
+            "alpeware.com",
+            "--service-account",
+            str(key_file),
+            "--tags",
+            "work,corp",
+            "--json",
+        ],
+    )
+    assert res_add.exit_code == 0
+    data_add = json.loads(res_add.output)
+    assert data_add["status"] == "success"
+    assert data_add["domain"] == "alpeware.com"
+    assert data_add["labels"] == ["work", "corp"]
+    assert "dwd_setup" in data_add
+    assert data_add["dwd_setup"]["client_id"] == "98765432101234567890"
+
+    cfg = load_config()
+    assert "alpeware.com" in cfg.domains
+    assert cfg.domains["alpeware.com"].labels == ["work", "corp"]
+
+    # 2. domain list
+    res_list = runner.invoke(cli, ["auth", "domain", "list", "--json"])
+    assert res_list.exit_code == 0
+    data_list = json.loads(res_list.output)
+    assert data_list["count"] == 1
+    assert "alpeware.com" in data_list["domains"]
+
+    # 3. domain info
+    res_info = runner.invoke(cli, ["auth", "domain", "info", "alpeware.com", "--json"])
+    assert res_info.exit_code == 0
+    data_info = json.loads(res_info.output)
+    assert data_info["client_id"] == "98765432101234567890"
+    assert data_info["domain"] == "alpeware.com"
+
+    # 4. domain remove
+    res_rem = runner.invoke(cli, ["auth", "domain", "remove", "alpeware.com", "--json"])
+    assert res_rem.exit_code == 0
+    data_rem = json.loads(res_rem.output)
+    assert data_rem["status"] == "success"
+    assert data_rem["removed_domain"] == "alpeware.com"
+
+    cfg_post = load_config()
+    assert "alpeware.com" not in cfg_post.domains
+
+
+def test_cli_auth_dwd_info(tmp_path: Path) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "sa.json")
+
+    result = runner.invoke(
+        cli,
+        [
+            "auth",
+            "dwd-info",
+            "--key-file",
+            str(key_file),
+            "--scopes",
+            "standard",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "success"
+    assert data["client_id"] == "98765432101234567890"
+    assert "https://www.googleapis.com/auth/gmail.modify" in data["scopes_csv"]
+
+
+@patch("gsuite_cli.commands.auth_cmd.load_account_credentials")
+def test_cli_auth_list_test_remove_service_account(
+    mock_load_creds: MagicMock,
+    mock_config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "sa.json")
+
+    mock_creds = MagicMock()
+    mock_creds.valid = True
+    mock_creds.expired = False
+    mock_load_creds.return_value = mock_creds
+
+    # Add SA account
+    runner.invoke(
+        cli,
+        [
+            "auth",
+            "add",
+            "admin@alpeware.com",
+            "--service-account",
+            str(key_file),
+            "--no-verify",
+            "--json",
+        ],
+    )
+
+    # 1. auth list
+    res_list = runner.invoke(cli, ["auth", "list", "--json"])
+    assert res_list.exit_code == 0
+    data_list = json.loads(res_list.output)
+    assert "admin@alpeware.com" in data_list["accounts"]
+    admin_info = data_list["accounts"]["admin@alpeware.com"]
+    assert admin_info["auth_type"] == "service_account"
+    assert admin_info["subject"] == "admin@alpeware.com"
+    assert "domains" in data_list
+
+    # 2. auth test
+    res_test = runner.invoke(cli, ["auth", "test", "--account", "admin@alpeware.com", "--json"])
+    assert res_test.exit_code == 0
+    data_test = json.loads(res_test.output)
+    assert data_test["accounts"]["admin@alpeware.com"]["auth_type"] == "service_account"
+    assert data_test["accounts"]["admin@alpeware.com"]["status"] == "ok"
+
+    # 3. auth remove
+    res_rem = runner.invoke(cli, ["auth", "remove", "admin@alpeware.com", "--json"])
+    assert res_rem.exit_code == 0
+    data_rem = json.loads(res_rem.output)
+    assert data_rem["status"] == "success"
+    assert data_rem["removed_account"] == "admin@alpeware.com"
+
+    cfg = load_config()
+    assert "admin@alpeware.com" not in cfg.accounts
+
+
+@patch("gsuite_cli.services.base.build")
+@patch("gsuite_cli.services.base.load_account_credentials")
+def test_cli_wildcard_domain_execution_end_to_end(
+    mock_load_creds: MagicMock,
+    mock_build: MagicMock,
+    mock_config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    _SERVICE_CACHE.clear()
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "domain_key.json")
+
+    # Register domain
+    res_dom = runner.invoke(
+        cli,
+        [
+            "auth",
+            "domain",
+            "add",
+            "alpeware.com",
+            "--service-account",
+            str(key_file),
+            "--json",
+        ],
+    )
+    assert res_dom.exit_code == 0
+
+    mock_load_creds.return_value = MagicMock()
+    mock_service = MagicMock()
+    mock_build.return_value = mock_service
+    mock_service.events().list().execute.return_value = {"items": []}
+
+    # Execute calendar agenda for a dynamic wildcard user under alpeware.com
+    res_cal = runner.invoke(
+        cli,
+        [
+            "calendar",
+            "agenda",
+            "--account",
+            "alice@alpeware.com",
+            "--json",
+        ],
+    )
+    assert res_cal.exit_code == 0
+    data_cal = json.loads(res_cal.output)
+    assert data_cal["status"] == "success"
+    assert data_cal["account"] == "alice@alpeware.com"
+
+
+def test_cli_accounts_list_with_domains_and_service_account(
+    mock_config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    key_file = _write_dummy_sa_key(tmp_path / "sa.json")
+
+    # Add domain
+    runner.invoke(
+        cli,
+        [
+            "auth",
+            "domain",
+            "add",
+            "corp.org",
+            "--service-account",
+            str(key_file),
+            "--json",
+        ],
+    )
+
+    # Add account with no-impersonate
+    runner.invoke(
+        cli,
+        [
+            "auth",
+            "add",
+            "bot@corp.org",
+            "--service-account",
+            str(key_file),
+            "--no-impersonate",
+            "--no-verify",
+            "--json",
+        ],
+    )
+
+    result = runner.invoke(cli, ["accounts", "list", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "success"
+    assert data["count"] == 1
+    assert data["accounts"][0]["auth_type"] == "service_account"
+    assert data["accounts"][0]["subject"] is None
+    assert len(data["domains"]) == 1
+    assert data["domains"][0]["domain"] == "corp.org"
